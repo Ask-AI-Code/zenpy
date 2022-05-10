@@ -254,6 +254,8 @@ class SearchExportResultGenerator(BaseResultGenerator):
     def handle_pagination(self):
         """ Handle retrieving and processing the next page of results. """
         self._response_json = self.get_next_page()
+        if len(self._response_json['results']) == 0:
+            raise StopIteration
         self.values.extend(self.process_page())
 
 
