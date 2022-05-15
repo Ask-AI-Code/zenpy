@@ -11,7 +11,6 @@ setup(
     author='Face Toe',
     author_email='facetoe@facetoe.com.au',
     url='https://github.com/facetoe/zenpy',
-    download_url='https://github.com/facetoe/zenpy/releases/tag/2.0.25',
     install_requires=[
         'requests>=2.14.2',
         'python-dateutil>=2.7.5',
