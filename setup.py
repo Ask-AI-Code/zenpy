@@ -10,7 +10,7 @@ setup(
     license_files = ('LICENSE'),
     author='Face Toe',
     author_email='facetoe@facetoe.com.au',
-    url='https://github.com/facetoe/zenpy',
+    url='https://github.com/Ask-AI-Code/zenpy',
     install_requires=[
         'requests>=2.14.2',
         'python-dateutil>=2.7.5',
