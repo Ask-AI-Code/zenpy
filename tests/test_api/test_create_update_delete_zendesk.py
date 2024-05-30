@@ -21,8 +21,12 @@ from zenpy.lib.api_objects import (
     OrganizationField,
     Upload,
     UserField,
+    CustomStatus,
 )
 
+from zenpy.lib.exception import (
+    ZenpyException,
+)
 
 class TestTicketCreateUpdateDelete(CRUDApiTestCase):
     __test__ = True
@@ -32,37 +36,17 @@ class TestTicketCreateUpdateDelete(CRUDApiTestCase):
     expected_single_result_type = TicketAudit
 
 
-class TestGroupCreateUpdateDelete(
-    SingleCreateApiTestCase, SingleUpdateApiTestCase, SingleDeleteApiTestCase
-):
-    __test__ = True
-    ZenpyType = Group
-    object_kwargs = dict(name="testGroup")
-    api_name = "groups"
-
-
 class TestUserCreateUpdateDelete(CRUDApiTestCase):
+    __test__ = True
+    ZenpyType = User
+    object_kwargs = dict(name="testUser", id="")
+    api_name = "users"
+
+class TestUserCreateUpdateDeleteNoID(CRUDApiTestCase):
     __test__ = True
     ZenpyType = User
     object_kwargs = dict(name="testUser")
     api_name = "users"
-
-
-class TestOrganizationCreateUpdateDelete(CRUDApiTestCase):
-    __test__ = True
-    ZenpyType = Organization
-    object_kwargs = dict(name="testOrganization{}")
-    api_name = "organizations"
-
-
-class TestMacrosCreateUpdateDelete(SingleUpdateApiTestCase, SingleCreateApiTestCase):
-    __test__ = True
-    ZenpyType = Macro
-    object_kwargs = dict(
-        title="TestMacro", actions=[{"field": "status", "value": "solved"}]
-    )
-    api_name = "macros"
-
 
 class TestRecipientAddressCreateUpdateDelete(
     SingleUpdateApiTestCase, SingleCreateApiTestCase
@@ -117,7 +101,7 @@ class TestAttachmentUpload(ZenpyApiTestCase):
             return self.zenpy_client.attachments.upload(*args, **kwargs)
 
     def test_upload_with_file_obj(self):
-        with open(self.file_path, "r") as f:
+        with open(self.file_path, "rb") as f:
             upload = self.call_upload_method(f, target_name="README.md")
             self.assertTrue(isinstance(upload, Upload))
 
@@ -151,3 +135,26 @@ class UserFieldsCreateUpdateDelete(
     )
     ignore_update_kwargs = ["key"]  # Can't update key after creation.
     api_name = "user_fields"
+
+class CustomStatusesCreateUpdateDelete(
+    SingleCreateApiTestCase, SingleUpdateApiTestCase
+):
+    __test__ = True
+    ZenpyType = CustomStatus
+    api_name = "custom_statuses"
+    object_kwargs = dict(
+        agent_label="agent", end_user_label="end", status_category="open"
+    )
+
+    # Deletions aren't possible, so clean out any created objects of CustomStatus before tear down
+    def tearDown(self):
+        self.created_objects = list(object for object in self.created_objects if type(object) is not self.ZenpyType)
+        super(CustomStatusesCreateUpdateDelete, self).tearDown()
+
+    # Doesn't matter what the ID is, it should throw an exception
+    def test_single_object_deletion(self):
+        with self.assertRaises(ZenpyException):
+            hopefully_not_real_id = (
+                9223372036854775807  # This is the largest id that Zendesk will accept.
+            )
+            self.delete_method(self.ZenpyType(id=hopefully_not_real_id))

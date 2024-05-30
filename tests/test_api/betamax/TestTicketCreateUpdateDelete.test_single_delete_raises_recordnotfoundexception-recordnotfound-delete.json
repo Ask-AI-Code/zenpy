@@ -1,11 +1,11 @@
 {
   "http_interactions": [
     {
-      "recorded_at": "2018-04-16T07:19:33",
+      "recorded_at": "2023-09-18T23:25:47",
       "request": {
         "body": {
           "encoding": "utf-8",
-          "string": "{\"ticket\": {\"assignee_id\": null, \"brand_id\": null, \"collaborator_ids\": null, \"created_at\": null, \"custom_fields\": null, \"description\": null, \"due_at\": null, \"external_id\": null, \"fields\": null, \"forum_topic_id\": null, \"group_id\": null, \"has_incidents\": null, \"id\": 9223372036854775807, \"organization_id\": null, \"priority\": null, \"problem_id\": null, \"raw_subject\": null, \"recipient\": null, \"requester_id\": null, \"satisfaction_rating\": null, \"sharing_agreement_ids\": null, \"status\": null, \"subject\": null, \"submitter_id\": null, \"tags\": null, \"type\": null, \"updated_at\": null, \"url\": null, \"via\": null}}"
+          "string": "{\"ticket\": {\"id\": 9223372036854775807}}"
         },
         "headers": {
           "Accept": [
@@ -15,19 +15,22 @@
             "gzip, deflate"
           ],
           "Authorization": [
-            "Basic c2luayt6ZW5kZXNrQGZhY2V0b2UuY29tLmF1L3Rva2VuOnBUNXQ2ZEZ4QWltU1hoNEkydjBYeVMwSkNlYVV4eWROQUxFRkV1VWM="
+            "Basic <ZENPY-CREDENTIALS>"
           ],
           "Connection": [
             "keep-alive"
           ],
           "Content-Length": [
-            "600"
+            "39"
           ],
           "Content-Type": [
             "application/json"
           ],
+          "Cookie": [
+            "_zendesk_cookie=BAhJIhl7ImRldmljZV90b2tlbnMiOnt9fQY6BkVU--0bf2100788cb010d0183feca16aaf88ccaf719ca"
+          ],
           "User-Agent": [
-            "Zenpy/1.2"
+            "Zenpy/2.0.38"
           ]
         },
         "method": "DELETE",
@@ -36,12 +39,15 @@
       "response": {
         "body": {
           "base64_string": "H4sIAAAAAAAAA6tWSi0qyi9SslIKSk3OL0rxyy9xyy/NS1HSUUpJLU4uyiwoyczPA0oDJRTSwDK1AHKmUTI0AAAA",
-          "encoding": "UTF-8",
+          "encoding": "utf-8",
           "string": ""
         },
         "headers": {
-          "Cache-Control": [
-            "no-cache"
+          "CF-Cache-Status": [
+            "DYNAMIC"
+          ],
+          "CF-RAY": [
+            "808d599fde2b27f9-SEA"
           ],
           "Connection": [
             "keep-alive"
@@ -50,55 +56,68 @@
             "gzip"
           ],
           "Content-Type": [
-            "application/json; charset=UTF-8"
+            "application/json; charset=utf-8"
           ],
           "Date": [
-            "Mon, 16 Apr 2018 07:19:33 GMT"
+            "Mon, 18 Sep 2023 23:25:47 GMT"
+          ],
+          "NEL": [
+            "{\"success_fraction\":0.01,\"report_to\":\"cf-nel\",\"max_age\":604800}"
+          ],
+          "Report-To": [
+            "{\"endpoints\":[{\"url\":\"https:\\/\\/a.nel.cloudflare.com\\/report\\/v3?s=UB%2F9BZgkBtMEv5fFQ%2FzMLhTlHbrwFN8IIeW50a3pZ8KktFyQuJMA8WFjUacOyBRDISsfhe2bTEnDL9qFqV2TLMVEDTIRwlIwPG%2BWbbAHp89fVkB2%2Fd7cN5rBHpwKm9sjxMVrRTWbYj8a13nX3A%3D%3D\"}],\"group\":\"cf-nel\",\"max_age\":604800}"
           ],
           "Server": [
-            "nginx"
-          ],
-          "Strict-Transport-Security": [
-            "max-age=31536000;"
+            "cloudflare"
           ],
           "Transfer-Encoding": [
             "chunked"
           ],
-          "X-Frame-Options": [
-            "SAMEORIGIN"
+          "X-Zendesk-Zorg": [
+            "yes"
           ],
-          "X-Rack-Cache": [
-            "invalidate, pass"
+          "cache-control": [
+            "no-cache"
           ],
-          "X-Rate-Limit": [
+          "rate-limit": [
             "700"
           ],
-          "X-Rate-Limit-Remaining": [
-            "684"
+          "rate-limit-remaining": [
+            "677"
           ],
-          "X-Request-Id": [
-            "a29db38a-d620-46b7-c6f3-0a27526fa680"
+          "rate-limit-reset": [
+            "14"
           ],
-          "X-Runtime": [
-            "0.140527"
+          "strict-transport-security": [
+            "max-age=31536000; includeSubDomains"
           ],
-          "X-UA-Compatible": [
-            "IE=Edge,chrome=1"
+          "x-frame-options": [
+            "SAMEORIGIN"
           ],
-          "X-Zendesk-API-Version": [
+          "x-rate-limit": [
+            "700"
+          ],
+          "x-rate-limit-remaining": [
+            "677"
+          ],
+          "x-request-id": [
+            "808d599fde2b27f9-SEA",
+            "808d599fde2b27f9-SEA"
+          ],
+          "x-runtime": [
+            "0.058233"
+          ],
+          "x-zendesk-api-version": [
             "v2"
           ],
-          "X-Zendesk-API-Warn": [
-            "Removed restricted keys [\"ticket.assignee_id\", \"ticket.brand_id\", \"ticket.collaborator_ids\", \"ticket.created_at\", \"ticket.custom_fields\", \"ticket.description\", \"ticket.due_at\", \"ticket.external_id\", \"ticket.fields\", \"ticket.forum_topic_id\", \"ticket.group_id\", \"ticket.has_incidents\", \"ticket.id\", \"ticket.organization_id\", \"ticket.priority\", \"ticket.problem_id\", \"ticket.raw_subject\", \"ticket.recipient\", \"ticket.requester_id\", \"ticket.satisfaction_rating\", \"ticket.sharing_agreement_ids\", \"ticket.status\", \"ticket.subject\", \"ticket.submitter_id\", \"ticket.tags\", \"ticket.type\", \"ticket.updated_at\", \"ticket.url\", \"ticket.via\", \"ticket\"] from parameters according to whitelist"
+          "x-zendesk-api-warn": [
+            "{:allowed_parameters=>{:controller=>\"tickets\", :action=>\"destroy\", :unpermitted_keys=>[\"ticket.id\", \"ticket\"], :invalid_values=>[]}}"
           ],
-          "X-Zendesk-Application-Version": [
-            "v926.24"
+          "x-zendesk-application-version": [
+            "v18385"
           ],
-          "X-Zendesk-Origin-Server": [
-            "app42.pod13.usw2.zdsys.com"
-          ],
-          "X-Zendesk-Request-Id": [
-            "175394d1f586a33f27e1"
+          "x-zendesk-origin-server": [
+            "classic-app-server-7bd9f74fd7-8kkvk"
           ]
         },
         "status": {

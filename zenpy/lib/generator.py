@@ -38,14 +38,15 @@ class BaseResultGenerator(Iterable):
 
     @abstractmethod
     def process_page(self):
-        """ Subclasses should do whatever processing is necessary and return a list of the results. """
+        """ Subclasses should do whatever processing is
+        necessary and return a list of the results. """
 
     def next(self):
         if self.values is None:
             self.values = self.process_page()
         if self.position >= len(self.values):
             self.handle_pagination()
-        if len(self.values) < 1:
+        if len(self.values) < 1 or self.position >= len(self.values):
             raise StopIteration()
         zenpy_object = self.values[self.position]
         self.position += 1
@@ -77,7 +78,8 @@ class BaseResultGenerator(Iterable):
         return response.json()
 
     def process_url(self, page_num, page_size, url):
-        """ When slicing, remove the per_page and page parameters and pass to requests in the params dict """
+        """ When slicing, remove the per_page and page parameters and
+        pass to requests in the params dict """
         params = dict()
         if page_num is not None:
             url = re.sub(r'page=\d+', '', url)
@@ -172,7 +174,7 @@ class BaseResultGenerator(Iterable):
 
 
 class ZendeskResultGenerator(BaseResultGenerator):
-    """ Generic result generator. """
+    """ Generic result generator for offset pagination. """
     def __init__(self,
                  response_handler,
                  response_json,
@@ -181,7 +183,7 @@ class ZendeskResultGenerator(BaseResultGenerator):
         super(ZendeskResultGenerator, self).__init__(response_handler,
                                                      response_json)
         self.object_type = object_type or self.response_handler.api.object_type
-        self.values = response_objects or None
+        self.values = response_objects or self.process_page() or None
 
     def process_page(self):
         response_objects = self.response_handler.deserialize(
@@ -221,12 +223,65 @@ class SearchResultGenerator(BaseResultGenerator):
                          self).get_next_page(page_num, page_size)
         except SearchResponseLimitExceeded:
             log.error(
-                'This search has resulted in more results than zendesk allows. We got what we could.'
+                'This search has resulted in more results than zendesk allows.'
+                'We got what we could.'
             )
             raise StopIteration()
 
 
-class SearchExportResultGenerator(BaseResultGenerator):
+class CursorResultsGenerator(BaseResultGenerator):
+    """
+    Generator for iterable endpoint results with cursor
+    """
+
+    def get_next_page(self):
+        """ Retrieve the next page of results. """
+        meta = self._response_json.get('meta')
+        if meta and meta.get('has_more'):
+            url = self._response_json.get('links').get('next')
+            log.debug('There are more results via url={}, retrieving'.format(url))
+            response = self.response_handler.api._get(url, raw_response=True)
+            new_json = response.json()
+            if hasattr(self, 'object_type')\
+                    and len(new_json.get(as_plural(self.object_type))) == 0:
+                """ 
+                    Probably a bug: when the total amount is a
+                    multiple of the page size,the very last page
+                    comes empty.
+                """
+                log.debug('Empty page has got, stopping iteration')
+                raise StopIteration()
+            else:
+                return new_json
+        else:
+            log.debug('No more results available, stopping iteration')
+            raise StopIteration()
+
+    def handle_pagination(self):
+        """ Handle retrieving and processing the next page of results. """
+        self._response_json = self.get_next_page()
+        self.values.extend(self.process_page())
+
+
+class GenericCursorResultsGenerator(CursorResultsGenerator):
+    """ Generic result generator for cursor pagination. """
+    def __init__(self,
+                 response_handler,
+                 response_json,
+                 response_objects=None,
+                 object_type=None):
+        super(GenericCursorResultsGenerator, self).__init__(response_handler,
+                                                     response_json)
+        self.object_type = object_type or self.response_handler.api.object_type
+        self.values = response_objects or self.process_page() or None
+
+    def process_page(self):
+        response_objects = self.response_handler.deserialize(
+            self._response_json)
+        return response_objects[as_plural(self.object_type)]
+
+
+class SearchExportResultGenerator(CursorResultsGenerator):
     """
     Generator for Search Export endpoint results
     """
@@ -239,17 +294,6 @@ class SearchExportResultGenerator(BaseResultGenerator):
                     object_type, object_json))
         return search_results
 
-    def get_next_page(self):
-        """ Retrieve the next page of results. """
-        meta = self._response_json.get('meta')
-        if meta and meta.get('has_more'):
-            url = self._response_json.get('links').get('next')
-            log.debug(f'There are more results via url={url}, retrieving')
-            response = self.response_handler.api._get(url, raw_response=True)
-            return response.json()
-        else:
-            log.debug('No more results available, stopping iteration')
-            raise StopIteration()
 
     def handle_pagination(self):
         """ Handle retrieving and processing the next page of results. """
@@ -257,11 +301,36 @@ class SearchExportResultGenerator(BaseResultGenerator):
         if len(self._response_json['results']) == 0:
             raise StopIteration
         self.values.extend(self.process_page())
+class WebhookInvocationsResultGenerator(CursorResultsGenerator):
+    """
+    Generator for Webhook Invocations endpoint
+    """
+    def process_page(self):
+        search_results = list()
+        for object_json in self._response_json['invocations']:
+            search_results.append(
+                self.response_handler.api._object_mapping.object_from_json(
+                    'invocation', object_json))
+        return search_results
+
+
+class WebhooksResultGenerator(CursorResultsGenerator):
+    """
+    Generator for Webhooks list
+    """
+    def process_page(self):
+        search_results = list()
+        for object_json in self._response_json['webhooks']:
+            search_results.append(
+                self.response_handler.api._object_mapping.object_from_json(
+                    'webhook', object_json))
+        return search_results
 
 
 class TicketCursorGenerator(ZendeskResultGenerator):
     """
-    Generator for cursor based incremental export endpoints for ticket and ticket_audit objects.
+    Generator for cursor based incremental export
+    endpoints for ticket and ticket_audit objects.
     """
     def __init__(self, response_handler, response_json, object_type):
         super(TicketCursorGenerator, self).__init__(response_handler,
@@ -272,7 +341,8 @@ class TicketCursorGenerator(ZendeskResultGenerator):
 
     def __reversed__(self):
         # Flip the direction we grab pages.
-        self.next_page_attr = 'before_url' if self.next_page_attr == 'after_url' else 'after_url'
+        self.next_page_attr = 'before_url' \
+            if self.next_page_attr == 'after_url' else 'after_url'
 
         # Special case for when the generator is reversed before consuming any values.
         if self.values is None:

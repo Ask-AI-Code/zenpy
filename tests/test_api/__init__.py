@@ -64,19 +64,20 @@ def assert_empty(iterable, message, ignore_func=None):
 
 
 def teardown_package():
-    print("teardown_package called")
-    zenpy_client, recorder = configure()
-    with recorder.use_cassette(
-        cassette_name="teardown_package", serialize_with="prettyjson"
-    ):
-        n = chunk_action(zenpy_client.tickets(), zenpy_client.tickets.delete)
-        print("Deleted {} tickets".format(n))
-        n = chunk_action(
-            zenpy_client.users(),
-            zenpy_client.users.delete,
-            ignore_func=lambda x: x.role == "admin",
-        )
-        print("Deleted {} users".format(n))
+    pass
+    # print("teardown_package called")
+    # zenpy_client, recorder = configure()
+    # with recorder.use_cassette(
+    #     cassette_name="teardown_package", serialize_with="prettyjson"
+    # ):
+    #     n = chunk_action(zenpy_client.tickets(), zenpy_client.tickets.delete)
+    #     print("Deleted {} tickets".format(n))
+    #     n = chunk_action(
+    #         zenpy_client.users(),
+    #         zenpy_client.users.delete,
+    #         ignore_func=lambda x: x.role == "admin",
+    #     )
+    #     print("Deleted {} users".format(n))
 
 
 def configure():
@@ -85,17 +86,21 @@ def configure():
     config.default_cassette_options["record_mode"] = "once"
     config.default_cassette_options["match_requests_on"] = ["method", "path_matcher"]
     if credentials:
-        auth_key = "token" if "token" in credentials else "password"
+        auth_key, template = ("token", "{}/token:{}") if "token" in credentials else ("password", "{}:{}")
         config.define_cassette_placeholder(
             "<ZENPY-CREDENTIALS>",
-            str(
                 base64.b64encode(
-                    "{}/token:{}".format(
+                    template.format(
                         credentials["email"], credentials[auth_key]
                     ).encode("utf-8")
-                )
-            ),
+                ).decode('utf-8'),
         )
+        if credentials["subdomain"] != "d3v-zenpydev":
+            config.define_cassette_placeholder(
+                "d3v-zenpydev.zendesk.com",
+                "{}.zendesk.com".format(credentials["subdomain"])
+            )
+
     session = requests.Session()
     credentials["session"] = session
     zenpy_client = Zenpy(**credentials)

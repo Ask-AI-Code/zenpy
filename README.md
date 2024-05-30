@@ -10,6 +10,7 @@ Please report bugs!
 
 * [Quickstart](#quickstart)
 * [Examples](#examples)
+  * Ticketing
     * [Creating a ticket with a different requester](#creating-a-ticket-with-a-different-requester)
     * [Commenting on a ticket](#commenting-on-a-ticket)
     * [Adding a HTML comment to a ticket](#adding-a-html-comment-to-a-ticket)
@@ -18,13 +19,18 @@ Please report bugs!
     * [Creating a ticket with a custom field set](#creating-a-ticket-with-a-custom-field-set)
     * [Updating a custom field on a ticket](#updating-a-custom-field-on-a-ticket)
     * [Applying a Macro to a ticket](#applying-a-macro-to-a-ticket)
+  * Users
     * [Adding a photo to a user](#adding-a-photo-to-a-user)
+  * Help center
     * [List all categories from help center](#List-all-categories-from-help-center)
     * [List all help center articles](#List-all-help-center-articles)
     * [List all help center articles in a section](#List-all-help-center-articles-in-a-section)
-    * [Create new categorie in help center](#Create-new-categorie-in-help-center)
+    * [Create new category in help center](#Create-new-category-in-help-center)
     * [Create new section in help center](#Create-new-section-in-help-center)
     * [Create new article in help center](#Create-new-article-in-help-center)
+  * Other
+    * [Working with webhooks](#Working-with-webhooks)
+    * [Pagination](#Pagination)
 * [Documentation](#documentation)
 * [Contributions](#contributions)
 
@@ -32,6 +38,7 @@ Please report bugs!
 
 ```python
 from zenpy import Zenpy
+from zenpy.lib.api_objects import Ticket
 # Create a Zenpy instance
 zenpy_client = Zenpy(**credentials)
 
@@ -256,6 +263,194 @@ new_article = zenpy_client.help_center.articles.create(
                     ),
                 )
 print(new_article.to_dict(serialize=True))
+```
+
+##### Working with webhooks
+
+###### Show a webhook
+```python
+webhook = zenpy_client.webhooks(id=WEBHOOK_ID) 
+```
+
+###### List webhooks
+```python
+# Just list all the webhooks
+for webhook in zenpy_client.webhooks.list():
+    pass # Do something with it
+
+# Filter the webhooks by a string in the name
+for webhook in zenpy_client.webhooks.list(filter='some string'):
+    pass # Do something with it
+
+# Using sorting and pagination according to https://developer.zendesk.com/api-reference/event-connectors/webhooks/webhooks/#list-webhooks
+zenpy_client.webhooks.list(sort='name')
+zenpy_client.webhooks.list(page_before=X, page_size=Y)
+zenpy_client.webhooks.list(page_after=N, page_size=Y)
+```
+
+###### Creating a webhook that uses basic authentication
+```python
+from zenpy.lib.api_objects import Webhook
+
+new_webhook = Webhook(
+    authentication={
+        "add_position": "header",
+        "data": {
+            "password": "hello_123",
+            "username": "john_smith"
+        },
+        "type": "basic_auth"
+    },
+    endpoint="https://example.com/status/200",
+    http_method="GET",
+    name="Example Webhook",
+    description="Webhook description",
+    request_format="json",
+    status="active",
+    subscriptions=["conditional_ticket_events"],
+) 
+zenpy_client.webhooks.create(new_webhook)
+```
+
+###### Creating a webhook that uses no authentication
+```python
+new_webhook = Webhook(
+    endpoint="https://example.com/status/200",
+    http_method="GET",
+    name="Example Webhook",
+    description="Webhook description",
+    request_format="json",
+    status="active",
+    subscriptions=["conditional_ticket_events"],
+) 
+zenpy_client.webhooks.create(new_webhook)
+```
+
+###### Creating a webhook that uses bearer token authentication
+```python
+new_webhook = Webhook(
+    authentication={
+        "add_position": "header",
+        "data": {
+            "token": "{{token}}"
+        },
+        "type": "bearer_token"
+    },
+    # other fields
+) 
+zenpy_client.webhooks.create(new_webhook)
+```
+
+###### Updating a webhook
+```python
+from zenpy.lib.api_objects import Webhook
+
+webhook = zenpy_client.webhooks(id=WEBHOOK_ID) 
+
+# Note: We need a brand new object because of API specific requirements for 'update'
+# https://developer.zendesk.com/api-reference/event-connectors/webhooks/webhooks/#update-webhook
+
+new_webhook = Webhook(
+                    name="New name",
+                    request_format="json",
+                    http_method="GET",
+                    endpoint="https://example.com/status/200",
+                    status="active",
+                    authentication={
+                      "add_position": "header",
+                      "data": {
+                          "password": "hello_123",     # As we can't get it back we need to pass it again from scratch
+                          "username": "john_smith"
+                      },
+                      "type": "basic_auth"
+                  },
+)
+response = zenpy_client.webhooks.update(webhook.id, new_webhook)
+```
+
+###### Partially updating (patching) a webhook
+```python
+webhook = zenpy_client.webhooks(id=WEBHOOK_ID)
+webhook.name = 'A new name'
+response = zenpy_client.webhooks.patch(webhook)
+```
+
+###### Cloning a webhook
+```python
+from zenpy.lib.api_objects import Webhook
+
+an_existing_webhook = zenpy_client.webhooks(id=WEBHOOK_ID) 
+new_webhook = zenpy_client.webhooks.clone(an_existing_webhook)
+
+# Or just
+new_webhook = zenpy_client.webhooks.clone(WEBHOOK_ID)
+```
+
+###### Working with secrets
+```python
+
+secret = zenpy_client.webhooks.show_secret(webhook)
+print(secret.secret)
+
+secret = zenpy_client.webhooks.reset_secret(webhook)
+print(secret.secret)
+```
+
+###### Testing webhooks
+```python
+
+# Testing an existing webhook "as is""
+response = zenpy_client.webhooks.test(webhook)
+
+# Testing an existing webhook with modifications 
+response = zenpy_client.webhooks.test(
+                    webhook, 
+                    request=dict(
+                      endpoint='https://example.org/'
+                    )
+)
+
+# Sending a test request without creating a webhook
+response = zenpy_client.webhooks.test(
+                    request=dict(
+                        endpoint="https://example.org",
+                        request_format="json",
+                        http_method="GET",
+                    )
+                )
+```
+
+###### Getting a webhook invocations
+
+[API documentation](https://developer.zendesk.com/api-reference/webhooks/webhooks-api/webhooks/#list-webhook-invocations)
+
+```python
+wh_filters = {
+    'filter[from_ts]': '2023-12-04T12:00:00Z',
+    'filter[to_ts]': '2023-12-04T16:00:00Z',
+    'filter[status]': 'success',
+}
+
+for invocations in zenpy.webhooks.invocations(webhook_id, **wh_filters):
+    pass
+
+```
+
+##### Pagination
+
+Please refer to the [official documentation](https://developer.zendesk.com/api-reference/introduction/pagination/) to get details. Also check this article: [Which endpoints are supported?](https://support.zendesk.com/hc/en-us/articles/4408846180634#h_01FF626TG8VD0W4JP9DBBSXESK)
+
+```python
+# An old style offset pagination, not recommended. Since August 15, 2023, is limited to 100 pages.
+fields = zenpy_client.ticket_fields()
+# Or
+fields = zenpy_client.ticket_fields(cursor_pagination=False)
+
+# A new cursor offset pagination
+fields = zenpy_client.ticket_fields(cursor_pagination=True) # is equal to 100 results per page
+# Or
+fields = zenpy_client.ticket_fields(cursor_pagination=50) # 50 results per page
+
 ```
 
 ## Documentation

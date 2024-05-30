@@ -25,10 +25,8 @@ else:
     basestring = basestring
 
 try:
-    from urllib import urlencode
     from urlparse import urlunsplit, SplitResult
 except ImportError:
-    from urllib.parse import urlencode
     from urllib.parse import urlunsplit, SplitResult
 
 log = logging.getLogger(__name__)
@@ -77,6 +75,7 @@ class PrimaryEndpoint(BaseEndpoint):
     def __call__(self, **kwargs):
         parameters = {}
         path = self.endpoint
+        cursor_pagination_value_requested = None
         for key, value in kwargs.items():
             if key == 'id':
                 path += "/{}.json".format(value)
@@ -92,6 +91,9 @@ class PrimaryEndpoint(BaseEndpoint):
                 path = self.endpoint
             elif key == 'recover_ids':
                 path += '/recover_many.json'
+                parameters['ids'] = ",".join(map(str, value))
+            elif key == 'restore_ids':
+                path += '/restore_many.json'
                 parameters['ids'] = ",".join(map(str, value))
             elif key == 'update_many':
                 path += '/update_many.json'
@@ -147,23 +149,49 @@ class PrimaryEndpoint(BaseEndpoint):
             elif key.endswith('ids'):
                 # if it looks like a type of unknown id, send it through as such
                 parameters[key] = ",".join(map(str, value))
+            elif key == 'cursor_pagination' and value:
+                if value is True:
+                    cursor_pagination_value_requested = 100
+                else:
+                    cursor_pagination_value_requested = value
 
         if path == self.endpoint and not path.endswith('.json'):
             path += '.json'
+            if cursor_pagination_value_requested:
+                parameters['page[size]'] = cursor_pagination_value_requested
+
         return Url(path=path, params=parameters)
 
 
 class SecondaryEndpoint(BaseEndpoint):
     def __call__(self, id, **kwargs):
-        return Url(self.endpoint % dict(id=id), params=kwargs)
+        parameters = {}
+        for key, value in kwargs.items():
+            if key == 'cursor_pagination':
+                if value is True:
+                    parameters['page[size]'] = 100
+                elif value is not False:
+                    parameters['page[size]'] = value
+            else:
+                parameters[key] = value
+        return Url(self.endpoint % dict(id=id), params=parameters)
 
 
 class MultipleIDEndpoint(BaseEndpoint):
-    def __call__(self, *args):
+    def __call__(self, *args, **kwargs):
         if not args or len(args) < 2:
             raise ZenpyException(
                 "This endpoint requires at least two arguments!")
-        return Url(self.endpoint.format(*args))
+        parameters = {}
+        for key, value in kwargs.items():
+            if key == 'cursor_pagination':
+                if value is True:
+                    parameters['page[size]'] = 100
+                elif value is not False:
+                    parameters['page[size]'] = value
+            else:
+                parameters[key] = value
+        return Url(self.endpoint.format(*args), params=parameters)
 
 
 class IncrementalEndpoint(BaseEndpoint):
@@ -171,9 +199,11 @@ class IncrementalEndpoint(BaseEndpoint):
     An IncrementalEndpoint takes a start_time parameter
     for querying the incremental api endpoint.
 
-    Note: The Zendesk API expects UTC time. If a timezone aware datetime object is passed
-    Zenpy will convert it to UTC, however if a naive object or unix timestamp is passed there is nothing
-    Zenpy can do. It is recommended to always pass timezone aware objects to this endpoint.
+    Note: The Zendesk API expects UTC time.
+    If a timezone aware datetime object is passed
+    Zenpy will convert it to UTC, however if a naive object or unix timestamp
+    is passed there is nothing Zenpy can do. It is recommended to always pass
+    timezone aware objects to this endpoint.
 
     :param start_time: unix timestamp or datetime object
     :param include: list of items to sideload
@@ -205,9 +235,10 @@ class ChatIncrementalEndpoint(BaseEndpoint):
     An ChatsIncrementalEndpoint takes parameters
     for querying the chats incremental api endpoint.
 
-    Note: The Zendesk API expects UTC time. If a timezone aware datetime object is passed
-    Zenpy will convert it to UTC, however if a naive object or unix timestamp is passed there is nothing
-    Zenpy can do. It is recommended to always pass timezone aware objects to this endpoint.
+    Note: The Zendesk API expects UTC time. If a timezone aware datetime
+    object is passed Zenpy will convert it to UTC, however if a naive
+    object or unix timestamp is passed there is nothing Zenpy can do.
+    It is recommended to always pass timezone aware objects to this endpoint.
 
     :param start_time: unix timestamp or datetime object
     :param fields: list of chat fields to load without "chats(xxx)". Defaults to "*"
@@ -272,21 +303,27 @@ class SearchEndpoint(BaseEndpoint):
 
     .. code:: python
 
-      zenpy.search("zenpy", created_between=[yesterday, today], type='ticket', minus='negated')
+      zenpy.search("zenpy",
+      created_between=[yesterday, today], type='ticket', minus='negated')
 
     Would generate the following API call:
     ::
-        /api/v2/search.json?query=zenpy+created>2015-08-29 created<2015-08-30+type:ticket+-negated
+        /api/v2/search.json?query=zenpy+created>2015-08-29
+        created<2015-08-30+type:ticket+-negated
 
 
     """
     def __call__(self, query=None, **kwargs):
-
         renamed_kwargs = dict()
         modifiers = list()
         params = dict()
         for key, value in kwargs.items():
-            if isinstance(value, datetime):
+            if key == 'cursor_pagination':
+                if value is True:
+                    params['page[size]'] = 100
+                elif value is not False:
+                    params['page[size]'] = value
+            elif isinstance(value, datetime):
                 kwargs[key] = value.strftime(self.ISO_8601_FORMAT)
             elif isinstance(value, date):
                 kwargs[key] = value.strftime(self.ZENDESK_DATE_FORMAT)
@@ -315,13 +352,15 @@ class SearchEndpoint(BaseEndpoint):
                     renamed_kwargs.update({key + ':': '%s' % value})
                 else:
                     raise ZenpyException(
-                        "This endpoint supports only 'ticket', 'group', 'user' or 'organization' type filter")
+                        "This endpoint supports only 'ticket',"
+                        "'group', 'user' or 'organization' type filter")
             elif is_iterable_but_not_string(value):
                 modifiers.append(self.format_or(key, value))
             else:
-                if isinstance(value, str) and value.count(' ') > 0:
-                    value = '"{}"'.format(value)
-                renamed_kwargs.update({key + ':': '%s' % value})
+                if (key != 'cursor_pagination'):
+                    if isinstance(value, str) and value.count(' ') > 0:
+                        value = '"{}"'.format(value)
+                    renamed_kwargs.update({key + ':': '%s' % value})
 
         search_query = [
             '%s%s' % (key, value) for (key, value) in renamed_kwargs.items()
@@ -380,7 +419,8 @@ class SatisfactionRatingEndpoint(BaseEndpoint):
                  score=None,
                  sort_order=None,
                  start_time=None,
-                 end_time=None):
+                 end_time=None,
+                 cursor_pagination=100):
         if sort_order and sort_order not in ('asc', 'desc'):
             raise ZenpyException("sort_order must be one of (asc, desc)")
         params = dict()
@@ -392,6 +432,10 @@ class SatisfactionRatingEndpoint(BaseEndpoint):
             params['start_time'] = to_unix_ts(start_time)
         if end_time:
             params['end_time'] = to_unix_ts(end_time)
+        if cursor_pagination:
+            params['page[size]'] = 100 if cursor_pagination is True \
+                else cursor_pagination
+
         return Url(self.endpoint, params=params)
 
 
@@ -407,17 +451,25 @@ class MacroEndpoint(BaseEndpoint):
             )
 
         if 'id' in kwargs:
-            if len(kwargs) > 1:
+            if len(kwargs) > 1 and not( len(kwargs) == 2 and
+                                        kwargs['cursor_pagination'] is not None):
                 raise ZenpyException(
                     "When specifying an id it must be the only parameter")
-
         params = dict()
         path = self.endpoint
         for key, value in kwargs.items():
-            if isinstance(value, bool):
+            if isinstance(value, bool)  and key != 'cursor_pagination':
                 value = str(value).lower()
             if key == 'id':
                 path += "/{}.json".format(value)
+            elif key == 'destroy_ids':
+                path += '/destroy_many.json'
+                params['ids'] = ",".join(map(str, value))
+            elif key == 'cursor_pagination' and value:
+                if value is True:
+                    params['page[size]'] = 100
+                else:
+                    params['page[size]'] = value
             else:
                 params[key] = value
 
@@ -434,7 +486,8 @@ class MacroEndpoint(BaseEndpoint):
 
 class ChatEndpoint(BaseEndpoint):
     def __call__(self, **kwargs):
-        if len(kwargs) > 1:
+        if len(kwargs) > 1 and not (len(kwargs) == 2
+                                    and kwargs['cursor_pagination'] is not None):
             raise ZenpyException(
                 "Only expect a single keyword to the ChatEndpoint")
         endpoint_path = self.endpoint
@@ -448,7 +501,7 @@ class ChatEndpoint(BaseEndpoint):
                     endpoint_path = '{}/email/{}'.format(self.endpoint, value)
                 elif self.endpoint == 'departments' and key == 'name':
                     endpoint_path = '{}/name/{}'.format(self.endpoint, value)
-                else:
+                elif key != 'cursor_pagination':
                     endpoint_path = "{}/{}".format(self.endpoint, value)
                 break
         return Url(endpoint_path, params=params)
@@ -468,6 +521,38 @@ class ViewSearchEndpoint(BaseEndpoint):
     def __call__(self, query, **kwargs):
         kwargs['query'] = query
         return Url(self.endpoint, params=kwargs)
+
+
+class WebhookEndpoint(BaseEndpoint):
+    def __call__(self, **kwargs):
+        path = self.endpoint
+        params = {}
+        for key, value in kwargs.items():
+            if key == 'id':
+                path += "/{}".format(value)
+                params = {}
+                break
+            elif key == 'clone_webhook_id':
+                params = {'clone_webhook_id': value}
+                break
+            elif key == 'test_webhook_id':
+                params = {'webhook_id': value}
+                break
+            elif key == 'filter':
+                params['filter[name_contains]'] = value
+            elif key == 'page_after':
+                params['page[after]'] = value
+            elif key == 'page_before':
+                params['page[before]'] = value
+            elif key == 'page_size':
+                params['page[size]'] = value
+            elif key == 'sort':
+                if value in ['name', 'status']:
+                    params['sort'] = value
+                else:
+                    raise ZenpyException("sort must be one of (name, status)")
+
+        return Url(path, params)
 
 
 class EndpointFactory(object):
@@ -494,6 +579,7 @@ class EndpointFactory(object):
     chats.stream = ChatSearchEndpoint('stream/chats')
     chats.incremental = ChatIncrementalEndpoint('incremental/chats')
     custom_agent_roles = PrimaryEndpoint('custom_roles')
+    custom_statuses = PrimaryEndpoint('custom_statuses')
     dynamic_contents = PrimaryEndpoint('dynamic_content/items')
     dynamic_contents.variants = SecondaryEndpoint(
         'dynamic_content/items/%(id)s/variants.json')
@@ -516,12 +602,16 @@ class EndpointFactory(object):
     group_memberships.make_default = MultipleIDEndpoint(
         'users/{}/group_memberships/{}/make_default.json')
     groups = PrimaryEndpoint('groups')
+    groups.assignable = PrimaryEndpoint('groups/assignable')
     groups.memberships = SecondaryEndpoint('groups/%(id)s/memberships.json')
     groups.memberships_assignable = SecondaryEndpoint(
         'groups/%(id)s/memberships/assignable.json')
     groups.users = SecondaryEndpoint('groups/%(id)s/users.json')
     job_statuses = PrimaryEndpoint('job_statuses')
     locales = PrimaryEndpoint('locales')
+    locales.agent = PrimaryEndpoint('locales/agent')
+    locales.public = PrimaryEndpoint('locales/public')
+    locales.current = PrimaryEndpoint('locales/current')
     links = PrimaryEndpoint('services/jira/links')
     macros = MacroEndpoint('macros')
     macros.apply = SecondaryEndpoint('macros/%(id)s/apply.json')
@@ -592,6 +682,7 @@ class EndpointFactory(object):
     tickets.comments.redact = MultipleIDEndpoint(
         'tickets/{0}/comments/{1}/redact.json')
     tickets.deleted = PrimaryEndpoint('deleted_tickets')
+    tickets.restore = SecondaryEndpoint('deleted_tickets/%(id)s/restore.json')
     tickets.events = IncrementalEndpoint('incremental/ticket_events.json')
     tickets.incidents = SecondaryEndpoint('tickets/%(id)s/incidents.json')
     tickets.incremental = IncrementalEndpoint('incremental/tickets.json')
@@ -624,8 +715,16 @@ class EndpointFactory(object):
     users.deleted = PrimaryEndpoint("deleted_users")
     users.groups = SecondaryEndpoint('users/%(id)s/groups.json')
     users.incremental = IncrementalEndpoint('incremental/users.json')
+    users.incremental.cursor = PrimaryEndpoint(
+        'incremental/users/cursor.json')
+    users.incremental.cursor_start = IncrementalEndpoint(
+        'incremental/users/cursor.json')
     users.me = PrimaryEndpoint('users/me')
     users.merge = SecondaryEndpoint('users/%(id)s/merge.json')
+    users.votes = SecondaryEndpoint(
+        'help_center/users/%(id)s/votes.json')
+    users.subscriptions = SecondaryEndpoint(
+        'help_center/users/%(id)s/subscriptions.json')
     users.organization_memberships = SecondaryEndpoint(
         'users/%(id)s/organization_memberships.json')
     users.organizations = SecondaryEndpoint('users/%(id)s/organizations.json')
@@ -652,6 +751,7 @@ class EndpointFactory(object):
     views.active = PrimaryEndpoint('views/active')
     views.compact = PrimaryEndpoint('views/compact')
     views.count = SecondaryEndpoint('views/%(id)s/count.json')
+    views.primary_count = PrimaryEndpoint('views/count.json')
     views.tickets = SecondaryEndpoint('views/%(id)s/tickets')
     views.execute = SecondaryEndpoint('views/%(id)s/execute.json')
     views.export = SecondaryEndpoint('views/%(id)s/export.json')
@@ -688,6 +788,11 @@ class EndpointFactory(object):
     talk_pe.create_ticket = PrimaryEndpoint(
         'channels/voice/tickets.json')
 
+    calls = SecondaryEndpoint('calls/%(id)s')
+    calls.create = PrimaryEndpoint('calls')
+    calls.update = SecondaryEndpoint('calls/%(id)s')
+    calls.comment = SecondaryEndpoint('calls/%(id)s/comments.json')
+
     help_centre = Dummy()
     help_centre.articles = PrimaryEndpoint('help_center/articles')
     help_centre.articles.create = SecondaryEndpoint(
@@ -702,6 +807,10 @@ class EndpointFactory(object):
         'help_center/articles/{}/comments/{}.json')
     help_centre.articles.user_comments = SecondaryEndpoint(
         'help_center/users/%(id)s/comments.json')
+    help_centre.articles.community_comments = SecondaryEndpoint(
+        "community/users/%(id)s/comments.json")
+    help_centre.articles.user_articles = SecondaryEndpoint(
+        'help_center/users/%(id)s/articles.json')
     help_centre.articles.labels = SecondaryEndpoint(
         'help_center/articles/%(id)s/labels.json')
     help_centre.articles.translations = SecondaryEndpoint(
@@ -814,6 +923,8 @@ class EndpointFactory(object):
 
     help_centre.posts.comments = SecondaryEndpoint(
         'community/posts/%(id)s/comments.json')
+    help_centre.posts.user_posts = SecondaryEndpoint(
+        'community/users/%(id)s/posts')
     help_centre.posts.comments.delete = MultipleIDEndpoint(
         'community/posts/{}/comments/{}.json')
     help_centre.posts.comments.update = MultipleIDEndpoint(
@@ -842,6 +953,24 @@ class EndpointFactory(object):
 
     # Note the use of "guide" instead of "help_center" in the API endpoint
     help_centre.permission_groups = PrimaryEndpoint('guide/permission_groups')
+
+    help_centre.users = PrimaryEndpoint('help_center/users')
+    help_centre.users.votes = SecondaryEndpoint(
+        'help_center/users/%(id)s/votes.json')
+
+    zis = Dummy()
+    zis.registry = Dummy()
+    zis.registry.create_integration = SecondaryEndpoint('%(id)s')
+    zis.registry.upload_bundle = SecondaryEndpoint('%(id)s/bundles')
+    zis.registry.install = MultipleIDEndpoint(
+        'job_specs/install?job_spec_name=zis:{}:job_spec:{}')
+
+    webhooks = WebhookEndpoint('webhooks')
+    webhooks.invocations = SecondaryEndpoint('webhooks/%(id)s/invocations')
+    webhooks.invocation_attempts = MultipleIDEndpoint(
+        'webhooks/{}/invocations/{}/attempts')
+    webhooks.test = WebhookEndpoint('webhooks/test')
+    webhooks.secret = SecondaryEndpoint('webhooks/%(id)s/signing_secret')
 
     def __new__(cls, endpoint_name):
         return getattr(cls, endpoint_name)

@@ -1,11 +1,16 @@
 from setuptools import setup
 import setuptools
+from pathlib import Path
 
+this_directory = Path(__file__).parent
+long_description = (this_directory / "README.md").read_text()
 setup(
     name='zenpy',
     packages=setuptools.find_packages(),
-    version='2.0.25',
+    version='2.0.49',
     description='Python wrapper for the Zendesk API',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
     license='GPLv3',
     license_files = ('LICENSE'),
     author='Face Toe',
@@ -30,6 +35,8 @@ setup(
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
         'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         'Natural Language :: English',
     ],

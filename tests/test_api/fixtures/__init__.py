@@ -62,7 +62,7 @@ class ZenpyApiTestCase(TestCase):
             sleep(request_interval)
             n += 1
             job_status = self.zenpy_client.job_status(id=job_status.id)
-            if job_status.progress == job_status.total:
+            if job_status.status in ['completed', 'failed']:
                 return job_status
             elif n > max_attempts:
                 raise Exception("Too many attempts to retrieve job status!")
@@ -224,12 +224,17 @@ class ModifiableApiTestCase(ZenpyApiTestCase):
             return hashlib.sha1(to_hash.encode()).hexdigest()
 
         new_kwargs = self.object_kwargs.copy()
+        if 'id' in new_kwargs:
+            new_kwargs.pop('id')
         for attr_name in new_kwargs:
             if (
                 isinstance(new_kwargs[attr_name], basestring)
                 and attr_name not in self.ignore_update_kwargs
             ):
-                new_kwargs[attr_name] += hash_of(new_kwargs[attr_name])
+                if '{}' in new_kwargs[attr_name]:
+                    new_kwargs[attr_name] = new_kwargs[attr_name].format(hash_of(new_kwargs[attr_name]))
+                else:
+                    new_kwargs[attr_name] += hash_of(new_kwargs[attr_name])
                 setattr(zenpy_object, attr_name, new_kwargs[attr_name])
                 self.assertTrue(
                     attr_name in zenpy_object._dirty_attributes,
@@ -413,7 +418,8 @@ class MultipleUpdateApiTestCase(ModifiableApiTestCase):
             for zenpy_object in self.api(ids=[r.id for r in job_status.results]):
                 modified_object, new_kwargs = self.modify_object(zenpy_object)
                 updated_objects.append((modified_object, new_kwargs))
-            self.update_method([m[0] for m in updated_objects])
+            result = self.update_method([m[0] for m in updated_objects])
+            self.wait_for_job_status(result)
             for modified_object, new_kwargs in updated_objects:
                 self.verify_object_updated(new_kwargs, modified_object)
 
@@ -457,3 +463,169 @@ class CRUDApiTestCase(
     MultipleDeleteApiTestCase,
 ):
     pass
+
+
+class PaginationTestCase(ModifiableApiTestCase):
+
+    pagination_limit = 100
+    skip_obp = False
+
+    def create_objects(self):
+        """ Implement this method to guarantee a minimum amount of objects """
+        pass
+
+    def destroy_objects(self):
+        """ Implement this method if destroy_many is not applicable """
+        pass
+
+    def count_objects_by_pagination_type(self, cursor_pagination=None):
+        count = 0
+        if cursor_pagination is not None:
+            generator = self.api(cursor_pagination=cursor_pagination)
+        else:
+            generator = self.api()
+
+        for _ in generator:
+            count += 1
+            if self.pagination_limit and count >= self.pagination_limit:
+                break
+
+        return count
+
+    def values_objects_by_pagination_type(self, cursor_pagination=None):
+        count = 0
+        if cursor_pagination is not None:
+            generator = self.api(cursor_pagination=cursor_pagination)
+        else:
+            generator = self.api()
+
+        return generator.values
+
+    def test_pagination(self):
+        """ Test different types of cursor pagination vs offset pagination """
+
+        cassette_name = "{}".format(self.generate_cassette_name())
+        with self.recorder.use_cassette(
+            cassette_name=cassette_name, serialize_with="prettyjson"
+        ):
+            self.create_objects()
+            try:
+                count_default = self.count_objects_by_pagination_type()
+                count_cbp = self.count_objects_by_pagination_type(cursor_pagination=True)
+                count_cbp1 = self.count_objects_by_pagination_type(cursor_pagination=1)
+
+                # We need at least 2 objects to check pagination
+                self.assertGreater(count_default, 1, "Default pagination returned less than 2 objects on class " + self.__class__.__name__)
+                self.assertNotEqual(count_cbp, 0, "CBP returned zero")
+                self.assertEqual(count_cbp, count_cbp1, "CBP<>CBP[1]")
+
+                if not self.skip_obp:
+                    count_obp = self.count_objects_by_pagination_type(cursor_pagination=False)
+                    self.assertNotEqual(count_obp, 0, "OBP returned zero")
+                    self.assertEqual(count_cbp, count_obp, "OBP<>CBP")
+            finally:
+                self.destroy_objects()
+
+    def test_values(self):
+        """ Test different types of cursor pagination vs offset pagination """
+
+        if self.__class__.__name__ == 'TestActivities': # too sparse
+            pass
+            return
+        cassette_name = "{}".format(self.generate_cassette_name())
+        with self.recorder.use_cassette(
+                cassette_name=cassette_name, serialize_with="prettyjson"
+        ):
+            self.create_objects()
+            try:
+                values_default = self.values_objects_by_pagination_type()
+                values_cbp = self.values_objects_by_pagination_type(cursor_pagination=True)
+                values_cbp1 = self.values_objects_by_pagination_type(cursor_pagination=1)
+
+                # We need at least 2 objects to check pagination
+                self.assertTrue(values_default, "Default pagination returned empty objects on class " + self.__class__.__name__)
+                self.assertTrue(values_cbp, "CBP returned zero")
+                self.assertTrue(values_cbp1, "CBP1 returned zero")
+
+                if not self.skip_obp:
+                    values_obp = self.values_objects_by_pagination_type(cursor_pagination=False)
+                    self.assertTrue(values_obp, "OBP returned zero")
+            finally:
+                self.destroy_objects()
+
+class IncrementalPaginationTestCase(ModifiableApiTestCase):
+
+    pagination_limit = 100
+    skip_obp = False
+
+    def create_objects(self):
+        """ Implement this method to guarantee a minimum amount of objects """
+        pass
+
+    def destroy_objects(self):
+        """ Implement this method if destroy_many is not applicable """
+        pass
+
+    def count_objects_by_pagination_type(self, time_based=False, per_page=None):
+        count = 0
+        generator = self.api(start_time=0, paginate_by_time=True, per_page=per_page) if time_based is True \
+            else self.api(start_time=0, paginate_by_time=False, per_page=per_page)
+
+        for _ in generator:
+            count += 1
+            if self.pagination_limit and count >= self.pagination_limit:
+                break
+
+        return count
+
+    def values_objects_by_pagination_type(self, time_based=False, per_page=None):
+        generator = self.api(start_time=0, paginate_by_time=True, per_page=per_page) if time_based is True \
+            else self.api(start_time=0, paginate_by_time=False, per_page=per_page)
+        return generator.values
+    def test_get_values(self):
+        """ Test different types of cursor pagination vs offset pagination """
+
+        cassette_name = "{}".format(self.generate_cassette_name())
+        with self.recorder.use_cassette(
+                cassette_name=cassette_name, serialize_with="prettyjson"
+        ):
+            self.create_objects()
+            try:
+                values_default = self.values_objects_by_pagination_type(time_based=True)
+                values_default_cursor = self.values_objects_by_pagination_type(time_based=False)
+                values_default_1_pp = self.values_objects_by_pagination_type(time_based=True, per_page=1)
+                values_default_1_cbp = self.values_objects_by_pagination_type(time_based=False, per_page=1)
+
+
+                # We need at least 2 objects to check pagination
+                self.assertTrue(values_default, "Default pagination returned empty objects on class " + self.__class__.__name__)
+                self.assertTrue(values_default_cursor, "count_default_cursor")
+                self.assertTrue(values_default_1_pp, "count_default_1_pp")
+                self.assertTrue(values_default_1_cbp, "count_default_1_cbp")
+
+            finally:
+                self.destroy_objects()
+    def test_pagination(self):
+        """ Test different types of cursor pagination vs offset pagination """
+
+        cassette_name = "{}".format(self.generate_cassette_name())
+        with self.recorder.use_cassette(
+                cassette_name=cassette_name, serialize_with="prettyjson"
+        ):
+            self.create_objects()
+            try:
+                count_default = self.count_objects_by_pagination_type(time_based=True)
+                count_default_cursor = self.count_objects_by_pagination_type(time_based=False)
+                count_default_1_pp = self.count_objects_by_pagination_type(time_based=True, per_page=1)
+                count_default_1_cbp = self.count_objects_by_pagination_type(time_based=False, per_page=1)
+
+
+                # We need at least 2 objects to check pagination
+                self.assertGreater(count_default, 1, "Default pagination returned less than 2 objects on class " + self.__class__.__name__)
+                self.assertNotEqual(count_default, 0, "CBP returned zero")
+                self.assertEqual(count_default, count_default_cursor, "count_default_cursor")
+                self.assertEqual(count_default, count_default_1_pp, "count_default_1_pp")
+                self.assertEqual(count_default, count_default_1_cbp, "count_default_1_cbp")
+
+            finally:
+                self.destroy_objects()
